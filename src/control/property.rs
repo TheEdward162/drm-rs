@@ -128,7 +128,7 @@ impl ValueType {
             ValueType::Enum(values) => Value::Enum(values.get_value_from_raw_value(value)),
             ValueType::Bitmask => Value::Bitmask(value),
             ValueType::Blob => Value::Blob(value),
-            ValueType::Object => Value::Object(RawResourceHandle::new(value as u32)),
+            ValueType::Object => Value::Object(handle_from_u32(value as u32)),
             ValueType::CRTC => Value::CRTC(handle_from_u32(value as u32)),
             ValueType::Connector => Value::Connector(handle_from_u32(value as u32)),
             ValueType::Encoder => Value::Encoder(handle_from_u32(value as u32)),
@@ -159,7 +159,7 @@ pub enum Value<'a> {
     /// Opaque (blob) value
     Blob(u64),
     /// Unknown object value
-    Object(Option<super::RawResourceHandle>),
+    Object(Option<RawResourceHandle>),
     /// Crtc object value
     CRTC(Option<super::crtc::Handle>),
     /// Connector object value
