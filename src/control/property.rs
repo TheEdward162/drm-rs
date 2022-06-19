@@ -11,7 +11,7 @@
 //! directly changing the property value itself, or by batching property changes
 //! together and executing them all atomically.
 
-use control;
+use control::{handle_from_u32, handle_to_u32, RawResourceHandle, ResourceHandle};
 use drm_ffi as ffi;
 
 /// A raw property value that does not have a specific property type
@@ -20,9 +20,9 @@ pub type RawValue = u64;
 /// A handle to a property
 #[repr(transparent)]
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
-pub struct Handle(control::RawResourceHandle);
+pub struct Handle(RawResourceHandle);
 
-impl From<Handle> for control::RawResourceHandle {
+impl From<Handle> for RawResourceHandle {
     fn from(handle: Handle) -> Self {
         handle.0
     }
@@ -34,13 +34,13 @@ impl From<Handle> for u32 {
     }
 }
 
-impl From<control::RawResourceHandle> for Handle {
-    fn from(handle: control::RawResourceHandle) -> Self {
+impl From<RawResourceHandle> for Handle {
+    fn from(handle: RawResourceHandle) -> Self {
         Handle(handle)
     }
 }
 
-impl control::ResourceHandle for Handle {
+impl ResourceHandle for Handle {
     const FFI_TYPE: u32 = ffi::DRM_MODE_OBJECT_PROPERTY;
 }
 
@@ -120,8 +120,6 @@ pub enum ValueType {
 impl ValueType {
     /// Given a [`RawValue`], convert it into a specific [`Value`]
     pub fn convert_value(&self, value: RawValue) -> Value {
-        use std::mem::transmute as tm;
-
         match self {
             ValueType::Unknown => Value::Unknown(value),
             ValueType::Boolean => Value::Boolean(value != 0),
@@ -130,13 +128,13 @@ impl ValueType {
             ValueType::Enum(values) => Value::Enum(values.get_value_from_raw_value(value)),
             ValueType::Bitmask => Value::Bitmask(value),
             ValueType::Blob => Value::Blob(value),
-            ValueType::Object => Value::Object(unsafe { tm(value as u32) }),
-            ValueType::CRTC => Value::CRTC(unsafe { tm(value as u32) }),
-            ValueType::Connector => Value::Connector(unsafe { tm(value as u32) }),
-            ValueType::Encoder => Value::Encoder(unsafe { tm(value as u32) }),
-            ValueType::Framebuffer => Value::Framebuffer(unsafe { tm(value as u32) }),
-            ValueType::Plane => Value::Plane(unsafe { tm(value as u32) }),
-            ValueType::Property => Value::Property(unsafe { tm(value as u32) }),
+            ValueType::Object => Value::Object(RawResourceHandle::new(value as u32)),
+            ValueType::CRTC => Value::CRTC(handle_from_u32(value as u32)),
+            ValueType::Connector => Value::Connector(handle_from_u32(value as u32)),
+            ValueType::Encoder => Value::Encoder(handle_from_u32(value as u32)),
+            ValueType::Framebuffer => Value::Framebuffer(handle_from_u32(value as u32)),
+            ValueType::Plane => Value::Plane(handle_from_u32(value as u32)),
+            ValueType::Property => Value::Property(handle_from_u32(value as u32)),
         }
     }
 }
@@ -178,8 +176,6 @@ pub enum Value<'a> {
 
 impl<'a> From<Value<'a>> for RawValue {
     fn from(value: Value<'a>) -> Self {
-        use std::mem::transmute as tm;
-
         match value {
             Value::Unknown(x) => x,
             Value::Boolean(true) => 1,
@@ -189,13 +185,13 @@ impl<'a> From<Value<'a>> for RawValue {
             Value::Enum(val) => val.map_or(0, EnumValue::value),
             Value::Bitmask(x) => x,
             Value::Blob(x) => x,
-            Value::Object(x) => unsafe { tm::<_, u32>(x).into() },
-            Value::CRTC(x) => unsafe { tm::<_, u32>(x).into() },
-            Value::Connector(x) => unsafe { tm::<_, u32>(x).into() },
-            Value::Encoder(x) => unsafe { tm::<_, u32>(x).into() },
-            Value::Framebuffer(x) => unsafe { tm::<_, u32>(x).into() },
-            Value::Plane(x) => unsafe { tm::<_, u32>(x).into() },
-            Value::Property(x) => unsafe { tm::<_, u32>(x).into() },
+            Value::Object(x) => handle_to_u32(x) as u64,
+            Value::CRTC(x) => handle_to_u32(x) as u64,
+            Value::Connector(x) => handle_to_u32(x) as u64,
+            Value::Encoder(x) => handle_to_u32(x) as u64,
+            Value::Framebuffer(x) => handle_to_u32(x) as u64,
+            Value::Plane(x) => handle_to_u32(x) as u64,
+            Value::Property(x) => handle_to_u32(x) as u64,
         }
     }
 }
@@ -214,6 +210,12 @@ impl EnumValue {
     /// Returns the name of this value
     pub fn name(&self) -> &std::ffi::CStr {
         unsafe { std::ffi::CStr::from_ptr(&self.0.name[0] as _) }
+    }
+}
+
+impl From<ffi::drm_mode_property_enum> for EnumValue {
+    fn from(inner: ffi::drm_mode_property_enum) -> Self {
+        EnumValue(inner)
     }
 }
 

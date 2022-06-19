@@ -42,6 +42,8 @@ pub mod plane;
 
 pub mod property;
 
+use crate::control::property::EnumValue;
+
 use self::dumbbuffer::*;
 use buffer;
 
@@ -63,11 +65,16 @@ pub trait ResourceHandle:
     const FFI_TYPE: u32;
 }
 
-/// Convert from a raw drm object value to a typed Handle
+/// Convert from a raw drm object value to a typed Handle.
 ///
 /// Note: This does no verification on the validity of the original value
-pub fn from_u32<T: ResourceHandle>(raw: u32) -> Option<T> {
+pub fn handle_from_u32<T: From<RawResourceHandle>>(raw: u32) -> Option<T> {
     RawResourceHandle::new(raw).map(T::from)
+}
+
+/// Convert from a typed Handle to raw drm object.
+pub fn handle_to_u32<T: Into<RawResourceHandle>>(handle: Option<T>) -> u32 {
+    handle.map(|x| x.into().get()).unwrap_or(0)
 }
 
 unsafe fn transmute_vec<T, U>(from: Vec<T>) -> Vec<U> {
@@ -120,13 +127,13 @@ pub trait Device: super::Device {
         let enc_len = enc_slice.len();
 
         let res = ResourceHandles {
-            fbs: unsafe { mem::transmute(fbs) },
+            fbs: fbs.map(handle_from_u32),
             fb_len,
-            crtcs: unsafe { mem::transmute(crtcs) },
+            crtcs: crtcs.map(handle_from_u32),
             crtc_len,
-            connectors: unsafe { mem::transmute(connectors) },
+            connectors: connectors.map(handle_from_u32),
             conn_len,
-            encoders: unsafe { mem::transmute(encoders) },
+            encoders: encoders.map(handle_from_u32),
             enc_len,
             width: (ffi_res.min_width, ffi_res.max_width),
             height: (ffi_res.min_height, ffi_res.max_height),
@@ -145,7 +152,7 @@ pub trait Device: super::Device {
         let plane_len = plane_slice.len();
 
         let res = PlaneResourceHandles {
-            planes: unsafe { mem::transmute(planes) },
+            planes: planes.map(handle_from_u32),
             plane_len,
         };
 
@@ -177,9 +184,9 @@ pub trait Device: super::Device {
                 (0, 0) => None,
                 (x, y) => Some((x, y)),
             },
-            modes: unsafe {  transmute_vec(modes) },
-            encoders: unsafe { mem::transmute(encoders) },
-            curr_enc: unsafe { mem::transmute(ffi_info.encoder_id) },
+            modes: unsafe { transmute_vec(modes) },
+            encoders: encoders.map(handle_from_u32),
+            curr_enc: handle_from_u32(ffi_info.encoder_id),
         };
 
         Ok(connector)
@@ -192,7 +199,7 @@ pub trait Device: super::Device {
         let enc = encoder::Info {
             handle,
             enc_type: encoder::Kind::from(info.encoder_type),
-            crtc: from_u32(info.crtc_id),
+            crtc: handle_from_u32(info.crtc_id),
             pos_crtcs: info.possible_crtcs,
             pos_clones: info.possible_clones,
         };
@@ -211,7 +218,7 @@ pub trait Device: super::Device {
                 0 => None,
                 _ => Some(Mode::from(info.mode)),
             },
-            fb: from_u32(info.fb_id),
+            fb: handle_from_u32(info.fb_id),
             gamma_length: info.gamma_size,
         };
 
@@ -234,7 +241,7 @@ pub trait Device: super::Device {
             pos.0,
             pos.1,
             unsafe { &*(conns as *const _ as *const [u32]) },
-            unsafe { mem::transmute(mode) },
+            mode.map(|m| m.into())
         )?;
 
         Ok(())
@@ -253,7 +260,7 @@ pub trait Device: super::Device {
             pitch: info.pitch,
             bpp: info.bpp,
             depth: info.depth,
-            buffer: unsafe { mem::transmute(info.handle) },
+            buffer: handle_from_u32(info.handle),
         };
 
         Ok(fb)
@@ -276,7 +283,7 @@ pub trait Device: super::Device {
             size: (info.width, info.height),
             pixel_format,
             flags: info.flags,
-            buffers: unsafe { mem::transmute(info.handles) },
+            buffers: info.handles.map(handle_from_u32),
             pitches: info.pitches,
             offsets: info.offsets,
             modifier: info.modifier.map(DrmModifier::from),
@@ -306,7 +313,7 @@ pub trait Device: super::Device {
             buffer.handle().into(),
         )?;
 
-        Ok(unsafe { mem::transmute(info.fb_id) })
+        Ok(handle_from_u32(info.fb_id).unwrap())
     }
 
     /// Add framebuffer (with modifiers)
@@ -321,18 +328,11 @@ pub trait Device: super::Device {
     {
         let (w, h) = planar_buffer.size();
         let opt_handles = planar_buffer.handles();
-        let handles = [
-            opt_handles[0].map(|x| x.into()).unwrap_or(0),
-            opt_handles[1].map(|x| x.into()).unwrap_or(0),
-            opt_handles[2].map(|x| x.into()).unwrap_or(0),
-            opt_handles[3].map(|x| x.into()).unwrap_or(0),
-        ];
-        let mods = [
-            modifiers[0].map(Into::<u64>::into).unwrap_or(0),
-            modifiers[1].map(Into::<u64>::into).unwrap_or(0),
-            modifiers[2].map(Into::<u64>::into).unwrap_or(0),
-            modifiers[3].map(Into::<u64>::into).unwrap_or(0),
-        ];
+
+        let handles = opt_handles.map(handle_to_u32);
+        let mods = modifiers.map(
+            |m| m.map(|m| m.into()).unwrap_or(0)
+        );
 
         let info = ffi::mode::add_fb2(
             self.as_raw_fd(),
@@ -346,7 +346,7 @@ pub trait Device: super::Device {
             flags,
         )?;
 
-        Ok(unsafe { mem::transmute(info.fb_id) })
+        Ok(handle_from_u32(info.fb_id).unwrap())
     }
 
     /// Mark parts of a framebuffer dirty
@@ -375,8 +375,8 @@ pub trait Device: super::Device {
 
         let plane = plane::Info {
             handle,
-            crtc: from_u32(info.crtc_id),
-            fb: from_u32(info.fb_id),
+            crtc: handle_from_u32(info.crtc_id),
+            fb: handle_from_u32(info.fb_id),
             pos_crtcs: info.possible_crtcs,
             formats,
             fmt_len,
@@ -453,7 +453,7 @@ pub trait Device: super::Device {
             } else if flags.contains(ModePropFlags::ENUM) {
                 let enum_values = self::property::EnumValues {
                     values,
-                    enums: unsafe { mem::transmute(enums) },
+                    enums: enums.map(EnumValue::from),
                     length: val_len,
                 };
 
@@ -571,8 +571,8 @@ pub trait Device: super::Device {
         let prop_len = prop_id_slice.len();
 
         let prop_val_set = PropertyValueSet {
-            prop_ids: unsafe { mem::transmute(prop_ids) },
-            prop_vals: unsafe { mem::transmute(prop_vals) },
+            prop_ids: prop_ids.map(handle_from_u32),
+            prop_vals,
             len: prop_len,
         };
 
@@ -638,7 +638,7 @@ pub trait Device: super::Device {
     /// Open a GEM buffer handle by name
     fn open_buffer(&self, name: buffer::Name) -> Result<buffer::Handle, SystemError> {
         let info = drm_ffi::gem::open(self.as_raw_fd(), name.into())?;
-        Ok(unsafe { mem::transmute(info.handle) })
+        Ok(handle_from_u32(info.handle).unwrap())
     }
 
     /// Close a GEM buffer handle
@@ -661,7 +661,7 @@ pub trait Device: super::Device {
             length: info.size as usize,
             format,
             pitch: info.pitch,
-            handle: unsafe { mem::transmute(info.handle) },
+            handle: handle_from_u32(info.handle).unwrap(),
         };
 
         Ok(dumb)
@@ -781,7 +781,7 @@ pub trait Device: super::Device {
     /// Convert a prime file descriptor to a GEM buffer handle
     fn prime_fd_to_buffer(&self, fd: RawFd) -> Result<buffer::Handle, SystemError> {
         let info = ffi::gem::fd_to_handle(self.as_raw_fd(), fd)?;
-        Ok(unsafe { mem::transmute(info.handle) })
+        Ok(handle_from_u32(info.handle).unwrap())
     }
 
     /// Convert a prime file descriptor to a GEM buffer handle
@@ -922,7 +922,7 @@ impl Iterator for Events {
                             vblank_event.tv_sec as u64,
                             vblank_event.tv_usec * 1000,
                         ),
-                        crtc: unsafe { mem::transmute(vblank_event.crtc_id as u32) },
+                        crtc: handle_from_u32(vblank_event.crtc_id as u32).unwrap(),
                         user_data: vblank_event.user_data as usize,
                     }))
                 }
@@ -935,13 +935,13 @@ impl Iterator for Events {
                             vblank_event.tv_sec as u64,
                             vblank_event.tv_usec * 1000,
                         ),
-                        crtc: unsafe {
-                            mem::transmute(if vblank_event.crtc_id != 0 {
+                        crtc: handle_from_u32(
+                            if vblank_event.crtc_id != 0 {
                                 vblank_event.crtc_id
                             } else {
                                 vblank_event.user_data as u32
-                            })
-                        },
+                            }
+                        ).unwrap(),
                     }))
                 }
                 _ => Some(Event::Unknown(
