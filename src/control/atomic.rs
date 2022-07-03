@@ -1,6 +1,28 @@
 //! Helpers for atomic modesetting.
 
+use drm_ffi as ffi;
+
 use control;
+
+bitflags::bitflags! {
+    /// Commit flags for atomic mode setting
+    ///
+    /// Limited to the values in [`ffi::drm_sys::DRM_MODE_ATOMIC_FLAGS`].
+    pub struct AtomicCommitFlags : u32 {
+        /// Generate a page flip event, when the changes are applied
+        const PAGE_FLIP_EVENT = ffi::drm_sys::DRM_MODE_PAGE_FLIP_EVENT;
+        /// Request page flip when the changes are applied, not waiting for vblank
+        const PAGE_FLIP_ASYNC = ffi::drm_sys::DRM_MODE_PAGE_FLIP_ASYNC;
+        /// Test only validity of the request, do not actually apply the requested changes
+        const TEST_ONLY = ffi::drm_sys::DRM_MODE_ATOMIC_TEST_ONLY;
+        /// Do not block on the request and return early
+        const NONBLOCK = ffi::drm_sys::DRM_MODE_ATOMIC_NONBLOCK;
+        /// Allow the changes to trigger a modeset, if necessary
+        ///
+        /// Changes requiring a modeset are rejected otherwise.
+        const ALLOW_MODESET = ffi::drm_sys::DRM_MODE_ATOMIC_ALLOW_MODESET;
+    }
+}
 
 /// Helper struct to construct atomic commit requests
 #[derive(Debug, Clone, Default)]

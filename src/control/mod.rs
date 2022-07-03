@@ -723,7 +723,7 @@ pub trait Device: super::Device {
     /// Request an atomic commit with given flags and property-value pair for a list of objects.
     fn atomic_commit(
         &self,
-        flags: AtomicCommitFlags,
+        flags: atomic::AtomicCommitFlags,
         mut req: atomic::AtomicModeReq,
     ) -> Result<(), SystemError> {
         drm_ffi::mode::atomic_commit(
@@ -960,12 +960,9 @@ impl ResourceHandles {
 
     /// Apply a filter the all crtcs of these resources, resulting in a list of crtcs allowed.
     pub fn filter_crtcs(&self, filter: CrtcListFilter) -> Vec<crtc::Handle> {
-        self.crtcs
-            .iter()
-            .enumerate()
-            .filter(|&(n, _)| (1 << n) & filter.0 != 0)
-            .map(|(_, &e)| e)
-            .collect()
+        filter.filter_iter(
+            self.crtcs.iter().copied()
+        ).collect()
     }
 }
 
@@ -973,6 +970,31 @@ impl ResourceHandles {
 /// A filter that can be used with a [`ResourceHandles`] to determine the set of
 /// Crtcs that can attach to a specific encoder.
 pub struct CrtcListFilter(u32);
+impl CrtcListFilter {
+    /// Checks the filter against the crtc index (as ordered by [Device::get_resources]).
+    pub fn check(&self, index: usize) -> bool {
+        (1 << index) & self.0 != 0
+    }
+
+    /// Filters at iterator using this filter.
+    /// 
+    /// Note that the filtering is based on position, so it will only be correct if the iterator is in the same order as
+    /// handles returned from [Device::get_resources].
+    pub fn filter_iter<'a, I: Iterator + 'a>(&'a self, iter: I) -> impl Iterator<Item = I::Item> + 'a {
+        iter.enumerate().filter_map(
+            move |(index, item)| if self.check(index) {
+                Some(item)
+            } else {
+                None
+            }
+        )
+    }
+
+    /// Returns raw representation of this filter.
+    pub fn as_raw(self) -> u32 {
+        self.0
+    }
+}
 
 /// Resolution and timing information for a display mode.
 #[repr(transparent)]
@@ -1169,26 +1191,6 @@ impl PropertyValueSet {
 }
 
 type ClipRect = ffi::drm_sys::drm_clip_rect;
-
-bitflags::bitflags! {
-    /// Commit flags for atomic mode setting
-    ///
-    /// Limited to the values in [`ffi::drm_sys::DRM_MODE_ATOMIC_FLAGS`].
-    pub struct AtomicCommitFlags : u32 {
-        /// Generate a page flip event, when the changes are applied
-        const PAGE_FLIP_EVENT = ffi::drm_sys::DRM_MODE_PAGE_FLIP_EVENT;
-        /// Request page flip when the changes are applied, not waiting for vblank
-        const PAGE_FLIP_ASYNC = ffi::drm_sys::DRM_MODE_PAGE_FLIP_ASYNC;
-        /// Test only validity of the request, do not actually apply the requested changes
-        const TEST_ONLY = ffi::drm_sys::DRM_MODE_ATOMIC_TEST_ONLY;
-        /// Do not block on the request and return early
-        const NONBLOCK = ffi::drm_sys::DRM_MODE_ATOMIC_NONBLOCK;
-        /// Allow the changes to trigger a modeset, if necessary
-        ///
-        /// Changes requiring a modeset are rejected otherwise.
-        const ALLOW_MODESET = ffi::drm_sys::DRM_MODE_ATOMIC_ALLOW_MODESET;
-    }
-}
 
 bitflags::bitflags! {
     /// Mode property flags

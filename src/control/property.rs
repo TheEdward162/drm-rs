@@ -177,7 +177,41 @@ pub enum Value<'a> {
     /// Property object value
     Property(Option<Handle>),
 }
-
+impl From<u64> for Value<'static> {
+    fn from(value: u64) -> Self {
+        Self::UnsignedRange(value)
+    }
+}
+impl From<super::crtc::Handle> for Value<'static> {
+    fn from(handle: super::crtc::Handle) -> Self {
+        Self::CRTC(Some(handle))
+    }
+}
+impl From<super::connector::Handle> for Value<'static> {
+    fn from(handle: super::connector::Handle) -> Self {
+        Self::Connector(Some(handle))
+    }
+}
+impl From<super::encoder::Handle> for Value<'static> {
+    fn from(handle: super::encoder::Handle) -> Self {
+        Self::Encoder(Some(handle))
+    }
+}
+impl From<super::framebuffer::Handle> for Value<'static> {
+    fn from(handle: super::framebuffer::Handle) -> Self {
+        Self::Framebuffer(Some(handle))
+    }
+}
+impl From<super::plane::Handle> for Value<'static> {
+    fn from(handle: super::plane::Handle) -> Self {
+        Self::Plane(Some(handle))
+    }
+}
+impl From<Handle> for Value<'static> {
+    fn from(handle: Handle) -> Self {
+        Self::Property(Some(handle))
+    }
+}
 impl<'a> From<Value<'a>> for RawValue {
     fn from(value: Value<'a>) -> Self {
         match value {
@@ -233,7 +267,7 @@ impl std::fmt::Debug for EnumValue {
 }
 
 /// A set of [`EnumValue`]s for a single property
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct EnumValues {
     pub(crate) values: Vec<u64>,
     pub(crate) enums: Vec<EnumValue>,
@@ -256,5 +290,19 @@ impl EnumValues {
             values.iter().position(|&v| v == value)?
         };
         Some(&enums[index])
+    }
+}
+
+impl std::fmt::Debug for EnumValues {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let (_vals, enums) = self.values();
+
+        let mut debug = f.debug_map();
+        for enum_value in enums {
+            debug.entry(
+                &enum_value.name(), &enum_value.value()
+            );
+        }
+        debug.finish()
     }
 }

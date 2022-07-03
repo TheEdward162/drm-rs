@@ -10,7 +10,7 @@ use drm::Device as BasicDevice;
 use drm::buffer::DrmFourcc;
 
 use drm::control::ResourceHandle;
-use drm::control::{self, atomic, connector, crtc, property, AtomicCommitFlags};
+use drm::control::{self, atomic, connector, crtc, property};
 
 fn find_prop_id<T: ResourceHandle>(
     card: &Card,
@@ -197,7 +197,7 @@ pub fn main() {
 
     // Set the crtc
     // On many setups, this requires root access.
-    card.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, atomic_req)
+    card.atomic_commit(atomic::AtomicCommitFlags::ALLOW_MODESET, atomic_req)
         .expect("Failed to set mode");
 
     let five_seconds = ::std::time::Duration::from_millis(5000);
